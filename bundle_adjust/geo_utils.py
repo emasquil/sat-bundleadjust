@@ -10,6 +10,7 @@ and the GeoJSON format, which is used to delimit geographic areas
 import numpy as np
 import pyproj
 import utm
+import rasterio
 
 
 def utm_from_lonlat(lons, lats):
@@ -290,3 +291,42 @@ def measure_squared_km_from_lonlat_geojson(lonlat_geojson):
     area_squared_m = geojson_to_shapely_polygon(utm_geojson).area
     area_squared_km = area_squared_m * (1e-6 / 1.0)
     return area_squared_km
+
+
+def get_elevations_from_latlons(coordinates, dem_path):
+    """
+    Extract elevation values from a DEM file for a list of latitude/longitude coordinates.
+
+    Args:
+        coordinates: List of (latitude, longitude) tuples
+        dem_path: Path to the GeoTIFF DEM file
+
+    Returns:
+        List of elevation values in the DEM's vertical units (typically meters)
+
+    Raises:
+        FileNotFoundError: If the DEM file doesn't exist
+        rasterio.errors.RasterioIOError: If there's an error reading the DEM
+    """
+    # Open the DEM file
+    with rasterio.open(dem_path) as dem:
+        elevations = []
+
+        for lat, lon in coordinates:
+            # Convert lat/lon to pixel coordinates
+            row, col = rasterio.transform.rowcol(dem.transform, lon, lat)
+
+            # Check if point is within raster bounds
+            if 0 <= round(row) < dem.height and 0 <= round(col) < dem.width:
+                # Read the elevation value
+                elevation = dem.read(1)[round(row), round(col)]
+
+                # Handle NoData values
+                if elevation == dem.nodata:
+                    elevation = 0
+            else:
+                elevation = 0
+
+            elevations.append(elevation)
+
+    return elevations

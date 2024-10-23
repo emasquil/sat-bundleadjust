@@ -93,6 +93,9 @@ class BundleAdjustmentPipeline:
         self.clean_outliers = extra_ba_config.get("clean_outliers", True)
         self.max_init_reproj_error = extra_ba_config.get("max_init_reproj_error", None)
         self.save_figures = extra_ba_config.get("save_figures", True)
+        # read extra argument containing the dem for the tile
+        if extra_ba_config.get("dem_file", None) is not None:
+            self.dem_file = extra_ba_config["dem_file"]
 
         # if aoi is not defined we take the union of all footprints
         self.set_footprints()
@@ -164,7 +167,12 @@ class BundleAdjustmentPipeline:
         t0 = timeit.default_timer()
         flush_print("Getting image footprints...")
         lonslats = np.array([[im.rpc.lon_offset, im.rpc.lat_offset] for im in self.images])
-        alts = srtm4.srtm4(lonslats[:, 0], lonslats[:, 1])
+        if self.dem_file:
+            # Use the dem file for getting the alts
+            latlons = lonslats[:, ::-1]
+            alts = geo_utils.get_elevations_from_latlons(latlons, self.dem_file)
+        else:
+            alts = srtm4.srtm4(lonslats[:, 0], lonslats[:, 1])
         import warnings
         warnings.filterwarnings("ignore")
         for im, h in zip(self.images, alts):
@@ -206,7 +214,10 @@ class BundleAdjustmentPipeline:
         """
         if self.cam_model == "affine":
             lon, lat = self.aoi["center"][0], self.aoi["center"][1]
-            alt = srtm4.srtm4(lon, lat)
+            if self.dem_file:
+                alt = geo_utils.get_elevation_from_latlon(lat, lon, self.dem_file)
+            else:
+                alt = srtm4.srtm4(lon, lat)
             x, y, z = geo_utils.latlon_to_ecef_custom(lat, lon, alt)
             self.cameras = [cam_utils.affine_rpc_approx(im.rpc, x, y, z, im.offset) for im in self.images]
             #self.check_projection_matrices(err)
@@ -233,7 +244,11 @@ class BundleAdjustmentPipeline:
             for im, rpc in zip(ft_images, ft_rpcs):
                 im.rpc = rpc
             lonslats = np.array([[im.rpc.lon_offset, im.rpc.lat_offset] for im in ft_images])
-            alts = srtm4.srtm4(lonslats[:, 0], lonslats[:, 1])
+            if self.dem_file:
+                latlons = lonslats[:, ::-1]
+                alts = geo_utils.get_elevations_from_latlons(latlons, self.dem_file)
+            else:
+                alts = srtm4.srtm4(lonslats[:, 0], lonslats[:, 1])
             for im, h in zip(ft_images, alts):
                 im.set_footprint(alt=h)
 
